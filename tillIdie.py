@@ -5,16 +5,28 @@ import time
 from datetime import datetime
 
 # --- Configuration ---
-# WARNING: Hardcoding your PAT is a significant security risk.
-# It is strongly recommended to use environment variables instead.
-# If this code is ever shared or made public, your token will be exposed.
-GH_TOKEN = "your_pat_here"  # Replace with your GitHub Personal Access Token
-GITHUB_REPO_URL = "https://github.com/your_username/your_repo.git"  # Replace with your repository URL
-
 UPTIME_FILE_PATH = "uptime.log"
 GIT_REMOTE_NAME = "origin"
 GIT_BRANCH_NAME = "main"
+CONFIG_FILE_PATH = "config.txt"
 
+def load_config(config_path):
+    """Loads configuration from a file."""
+    config = {}
+    if not os.path.exists(config_path):
+        print(f"Error: Configuration file not found at {config_path}")
+        return None
+    try:
+        with open(config_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    config[key.strip()] = value.strip()
+        return config
+    except (IOError, ValueError) as e:
+        print(f"Error reading or parsing config file {config_path}: {e}")
+        return None
 
 def run_command(command):
     """Runs a shell command and returns its output."""
@@ -26,7 +38,7 @@ def run_command(command):
         print(f"Stderr: {e.stderr}")
         return None
 
-def initialize_git_repository():
+def initialize_git_repository(gh_token, github_repo_url):
     """Initializes the git repository if it's not already set up."""
     if not os.path.isdir('.git'):
         run_command(['git', 'init'])
@@ -43,12 +55,13 @@ def initialize_git_repository():
 
     remotes = run_command(['git', 'remote'])
     if not remotes or GIT_REMOTE_NAME not in remotes.split():
-        if GH_TOKEN == "your_pat_here" or GITHUB_REPO_URL == "https://github.com/your_username/your_repo.git":
-            print("Please update GH_TOKEN and GITHUB_REPO_URL in the script.")
-            return
-        auth_url = GITHUB_REPO_URL.replace("https://", f"https://{GH_TOKEN}@")
+        if not gh_token or gh_token == "your_pat_here" or not github_repo_url or github_repo_url == "https://github.com/your_username/your_repo.git":
+            print("Please update GH_TOKEN and GITHUB_REPO_URL in config.txt.")
+            return False
+        auth_url = github_repo_url.replace("https://", f"https://{gh_token}@")
         run_command(['git', 'remote', 'add', GIT_REMOTE_NAME, auth_url])
         print(f"Added remote '{GIT_REMOTE_NAME}'.")
+    return True
 
 def get_uptime():
     """Retrieves the system uptime."""
@@ -82,13 +95,12 @@ def git_commit_and_push(file_path, remote_name, branch_name):
     print("Successfully created git commit.")
 
     push_command = ['git', 'push', remote_name, branch_name]
-    push_output = run_command(push_command)
-    if push_output is None:
-        print("Failed to push changes to GitHub.")
-        # Try to set the upstream branch on the first push
-        if "has no upstream branch" in push_output:
-            run_command(['git', 'push', '--set-upstream', remote_name, branch_name])
-        return False
+    if run_command(push_command) is None:
+        print("Failed to push changes to GitHub. Trying to set upstream branch.")
+        set_upstream_command = ['git', 'push', '--set-upstream', remote_name, branch_name]
+        if run_command(set_upstream_command) is None:
+            print("Failed to set upstream and push.")
+            return False
 
     print("Successfully pushed changes to GitHub.")
     return True
@@ -100,7 +112,15 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
 
-    initialize_git_repository()
+    config = load_config(CONFIG_FILE_PATH)
+    if not config:
+        return
+
+    gh_token = config.get("GH_TOKEN")
+    github_repo_url = config.get("GITHUB_REPO_URL")
+
+    if not initialize_git_repository(gh_token, github_repo_url):
+        return
 
     abs_uptime_file_path = os.path.join(script_dir, UPTIME_FILE_PATH)
 
