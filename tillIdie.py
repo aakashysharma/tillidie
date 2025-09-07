@@ -34,12 +34,14 @@ def run_command(command):
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Error running command: {' '.join(command)}")
-        print(f"Stderr: {e.stderr}")
+        # Don't print error for commands that are expected to fail sometimes
+        if not (command[0] == 'git' and command[1] == 'remote' and command[2] == 'get-url'):
+             print(f"Error running command: {' '.join(command)}")
+             print(f"Stderr: {e.stderr}")
         return None
 
 def initialize_git_repository(gh_token, github_repo_url):
-    """Initializes the git repository if it's not already set up."""
+    """Initializes and configures the git repository for token authentication."""
     if not os.path.isdir('.git'):
         run_command(['git', 'init'])
         print("Initialized empty Git repository.")
@@ -47,20 +49,30 @@ def initialize_git_repository(gh_token, github_repo_url):
     gitignore_path = '.gitignore'
     if not os.path.exists(gitignore_path):
         with open(gitignore_path, 'w') as f:
-            f.write("# Ignore all files\n*\n# Un-ignore the uptime log\n!uptime.log\n")
-        print("Created .gitignore to only track uptime.log")
+            f.write("# Ignore all files\n*\n# Un-ignore the uptime log and config file\n!uptime.log\n!config.txt\n")
+        print("Created .gitignore.")
         run_command(['git', 'add', gitignore_path])
         run_command(['git', 'commit', '-m', 'feat: Add .gitignore'])
         print("Committed .gitignore.")
 
-    remotes = run_command(['git', 'remote'])
-    if not remotes or GIT_REMOTE_NAME not in remotes.split():
-        if not gh_token or gh_token == "your_pat_here" or not github_repo_url or github_repo_url == "https://github.com/your_username/your_repo.git":
-            print("Please update GH_TOKEN and GITHUB_REPO_URL in config.txt.")
-            return False
-        auth_url = github_repo_url.replace("https://", f"https://{gh_token}@")
-        run_command(['git', 'remote', 'add', GIT_REMOTE_NAME, auth_url])
-        print(f"Added remote '{GIT_REMOTE_NAME}'.")
+    if not gh_token or gh_token == "your_pat_here" or not github_repo_url or github_repo_url == "https://github.com/your_username/your_repo.git":
+        print("Please update GH_TOKEN and GITHUB_REPO_URL in config.txt.")
+        return False
+
+    auth_url = github_repo_url.replace("https://", f"https://{gh_token}@")
+    
+    current_url = run_command(['git', 'remote', 'get-url', GIT_REMOTE_NAME])
+
+    if current_url != auth_url:
+        if current_url:
+            print(f"Updating remote '{GIT_REMOTE_NAME}' URL for token authentication.")
+            run_command(['git', 'remote', 'set-url', GIT_REMOTE_NAME, auth_url])
+        else:
+            print(f"Adding remote '{GIT_REMOTE_NAME}' for token authentication.")
+            run_command(['git', 'remote', 'add', GIT_REMOTE_NAME, auth_url])
+    else:
+        print(f"Remote '{GIT_REMOTE_NAME}' is already configured correctly.")
+
     return True
 
 def get_uptime():
