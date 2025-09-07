@@ -34,7 +34,7 @@ def run_command(command):
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        # Don't print error for commands that are expected to fail sometimes
+        # Suppress errors for commands that are expected to fail if a remote doesn't exist yet.
         if not (command[0] == 'git' and command[1] == 'remote' and command[2] == 'get-url'):
              print(f"Error running command: {' '.join(command)}")
              print(f"Stderr: {e.stderr}")
@@ -49,8 +49,8 @@ def initialize_git_repository(gh_token, github_repo_url):
     gitignore_path = '.gitignore'
     if not os.path.exists(gitignore_path):
         with open(gitignore_path, 'w') as f:
-            f.write("# Ignore all files\n*\n# Un-ignore the uptime log and config file\n!uptime.log\n!config.txt\n")
-        print("Created .gitignore.")
+            f.write("# Ignore all files\n*\n# Un-ignore the uptime log\n!uptime.log\n")
+        print("Created .gitignore to only track uptime.log")
         run_command(['git', 'add', gitignore_path])
         run_command(['git', 'commit', '-m', 'feat: Add .gitignore'])
         print("Committed .gitignore.")
@@ -105,6 +105,16 @@ def git_commit_and_push(file_path, remote_name, branch_name):
         print("Failed to create git commit.")
         return False
     print("Successfully created git commit.")
+
+    # Pull remote changes before pushing. Use rebase to avoid merge commits.
+    print("Pulling remote changes with rebase...")
+    pull_command = ['git', 'pull', '--rebase', remote_name, branch_name]
+    if run_command(pull_command) is None:
+        print("Failed to pull and rebase. A manual merge may be required.")
+        # Abort the rebase and reset the commit to try again next time.
+        run_command(['git', 'rebase', '--abort'])
+        run_command(['git', 'reset', 'HEAD~1'])
+        return False
 
     push_command = ['git', 'push', remote_name, branch_name]
     if run_command(push_command) is None:
